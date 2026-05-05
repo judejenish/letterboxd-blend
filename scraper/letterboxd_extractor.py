@@ -2,6 +2,8 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
+import sys
+import platform
 
 
 HEADERS = {
@@ -16,7 +18,7 @@ session.headers.update(HEADERS)
 
 
 def get_html_selenium(url):
-    """Try to use Selenium, fallback to requests if it fails"""
+    """Try to use Selenium (works on local)"""
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.service import Service
@@ -38,14 +40,49 @@ def get_html_selenium(url):
         return html
     except Exception as e:
         print(f"⚠️ Selenium failed: {e}")
-        print(f"   Falling back to requests with better headers...")
-        # Fallback to requests with better headers
-        return get_html_requests_fallback(url)
+        return None
+
+
+def get_html_playwright_fallback(url):
+    """Fallback to Playwright when Selenium fails (works on Render)"""
+    try:
+        print(f"   Using Playwright fallback for: {url}")
+        
+        import asyncio
+        from playwright.async_api import async_playwright
+        
+        async def fetch():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=15000)
+                await asyncio.sleep(2)
+                html = await page.content()
+                await browser.close()
+                return html
+        
+       
+        if sys.platform == "win32":
+            # Windows: use ProactorEventLoop
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            html = loop.run_until_complete(fetch())
+            return html
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        
+        return None
 
 
 def get_html_requests_fallback(url):
-    """Fallback when Selenium fails (e.g., on Render)"""
+    """Last resort fallback using requests with best headers"""
     try:
+        print(f"   Using requests fallback for: {url}")
         improved_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -55,27 +92,35 @@ def get_html_requests_fallback(url):
             "Pragma": "no-cache",
             "Referer": "https://letterboxd.com/",
             "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "DNT": "1",
         }
         res = requests.get(url, headers=improved_headers, timeout=15)
         res.raise_for_status()
         return res.text
     except Exception as e:
-        print(f"❌ Fallback also failed: {e}")
+        
         return ""
 
 
 def get_html(url):
+    """Get HTML - try Selenium first, then Playwright, then requests"""
     res = session.get(url)
 
-   
-    if "diary-entry-row" not in res.text:
-        return get_html_selenium(url)
-
-    return res.text
+    if "diary-entry-row" in res.text:
+        return res.text
+    
+    
+    html = get_html_selenium(url)
+    if html and ("diary-entry-row" in html or "favourites" in html):
+        return html
+    
+    
+    html = get_html_playwright_fallback(url)
+    if html and ("diary-entry-row" in html or "favourites" in html):
+        return html
+    
+    
+    html = get_html_requests_fallback(url)
+    return html if html else res.text
 
 
 
@@ -121,6 +166,7 @@ def scrape_favorites_df(base_url):
     data = []
 
     if not fav_section:
+        
         return pd.DataFrame()
 
     items = fav_section.find_all(
@@ -142,6 +188,7 @@ def scrape_favorites_df(base_url):
                 "slug": slug
             })
 
+    
     return pd.DataFrame(data)
 
 
@@ -154,7 +201,7 @@ def extract_row(row):
     date = None
     if day_link:
         href = day_link.get("href", "")
-        # href is like /username/diary/films/for/2026/05/02/
+        
         parts = [p for p in href.split("/") if p]
         try:
             for_idx = parts.index("for")
