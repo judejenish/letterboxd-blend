@@ -5,10 +5,17 @@ import time
 import sys
 
 
+# Better default headers - mimics real browser
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://letterboxd.com/"
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://letterboxd.com/",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
 }
 
 
@@ -36,75 +43,93 @@ def get_html_selenium(url):
         time.sleep(3) 
         html = driver.page_source
         driver.quit()
-        print(f"✅ Selenium SUCCESS: Got {len(html)} bytes")
         return html
     except Exception as e:
-        print(f"❌ Selenium FAILED: {str(e)[:100]}")
+        print(f"⚠️ Selenium failed: {e}")
         return None
 
 
-def get_html_requests_only(url):
-    """Use requests with excellent headers - works on Render for most content"""
+def get_html_playwright_fallback(url):
+    """Fallback to Playwright when Selenium fails (works on Render)"""
     try:
-        print(f"🔄 Trying requests with browser headers...")
+        print(f"   Using Playwright fallback for: {url}")
         
-        headers = {
+        import asyncio
+        from playwright.async_api import async_playwright
+        
+        async def fetch():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=15000)
+                await asyncio.sleep(2)
+                html = await page.content()
+                await browser.close()
+                return html
+        
+       
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            html = loop.run_until_complete(fetch())
+            return html
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        return None
+
+
+def get_html_requests_fallback(url):
+    """Last resort fallback using requests with best headers"""
+    try:
+        print(f"   Using requests fallback for: {url}")
+        improved_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "max-age=0",
-            "Sec-Ch-Ua": "\"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"121\", \"Chromium\";v=\"121\"",
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": "\"Windows\"",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://letterboxd.com/",
+            "Upgrade-Insecure-Requests": "1",
             "Sec-Fetch-Dest": "document",
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1",
-            "Referer": "https://letterboxd.com/",
-            "DNT": "1",
         }
-        
-        res = requests.get(url, headers=headers, timeout=15)
+        res = requests.get(url, headers=improved_headers, timeout=15)
         res.raise_for_status()
-        
-        html = res.text
-        print(f"✅ Requests SUCCESS: Got {len(html)} bytes")
-        
-        # Check what we got
-        if "favourites" in html:
-            print(f"   ✓ Found 'favourites' section")
-        if "diary-entry-row" in html:
-            print(f"   ✓ Found 'diary-entry-row'")
-            
-        return html
+        return res.text
     except Exception as e:
-        print(f"❌ Requests FAILED: {str(e)[:100]}")
-        return None
+        return ""
 
 
 def get_html(url):
-    """Try Selenium, then requests"""
-    print(f"\n📡 Fetching: {url}")
-    
-    # Step 1: Try Selenium first
-    html = get_html_selenium(url)
-    if html:
-        return html
-    
-    # Step 2: Fall back to requests (works on Render)
-    html = get_html_requests_only(url)
-    if html:
-        return html
-    
-    # Step 3: Last resort - basic request
-    print(f"⚠️  Using fallback basic request...")
-    try:
-        res = session.get(url, timeout=10)
+    """Get HTML - try Selenium first, then Playwright, then requests"""
+    res = session.get(url)
+
+    # ✅ FIX: Check for BOTH diary-entry-row AND favourites
+    # Profile page has 'favourites', diary page has 'diary-entry-row'
+    if "diary-entry-row" in res.text or "favourites" in res.text:
         return res.text
-    except:
-        return ""
+    
+    
+    html = get_html_selenium(url)
+    if html and ("diary-entry-row" in html or "favourites" in html):
+        return html
+    
+    
+    html = get_html_playwright_fallback(url)
+    if html and ("diary-entry-row" in html or "favourites" in html):
+        return html
+    
+    
+    html = get_html_requests_fallback(url)
+    return html if html else res.text
+
 
 
 def resolve_url(url):
@@ -141,26 +166,19 @@ def get_total_pages(base_url):
 
 
 def scrape_favorites_df(base_url):
-    print(f"\n⭐ Scraping favorites from: {base_url}")
     html = get_html(base_url)
     soup = BeautifulSoup(html, "html.parser")
 
     fav_section = soup.find("section", id="favourites")
 
+    data = []
+
     if not fav_section:
-        print(f"   ❌ No favorites section found in HTML")
-        # Debug: show what sections we found
-        sections = soup.find_all("section")
-        print(f"   Found {len(sections)} sections total")
         return pd.DataFrame()
 
     items = fav_section.find_all(
         "div", class_="favourite-production-poster-container"
     )
-
-    print(f"   ✓ Found {len(items)} favorite items")
-
-    data = []
 
     for item in items:
         comp = item.find("div", class_="react-component")
@@ -177,7 +195,6 @@ def scrape_favorites_df(base_url):
                 "slug": slug
             })
 
-    print(f"   ✓ Extracted {len(data)} favorites")
     return pd.DataFrame(data)
 
 
@@ -190,7 +207,7 @@ def extract_row(row):
     date = None
     if day_link:
         href = day_link.get("href", "")
-        # href is like /username/diary/films/for/2026/05/02/
+        
         parts = [p for p in href.split("/") if p]
         try:
             for_idx = parts.index("for")
@@ -198,12 +215,12 @@ def extract_row(row):
         except (ValueError, IndexError):
             date = None
 
+    
     rating = None
 
     rating_span = row.find("span", class_="rating")
     if rating_span:
         classes = rating_span.get("class", [])
-        # Look for "rated-X" class
         for cls in classes:
             if cls.startswith("rated-"):
                 rating = int(cls.replace("rated-", "")) / 2
@@ -219,9 +236,7 @@ def extract_row(row):
     }
 
 def scrape_diary_df(base_url):
-    print(f"\n📽️ Scraping diary from: {base_url}")
     total_pages = get_total_pages(base_url)
-    print(f"   Found {total_pages} pages")
     all_data = []
 
     for page in range(1, total_pages + 1):
@@ -235,7 +250,6 @@ def scrape_diary_df(base_url):
         soup = BeautifulSoup(html, "html.parser")
 
         rows = soup.find_all("tr", class_="diary-entry-row")
-        print(f"   Page {page}: Found {len(rows)} entries")
 
         for row in rows:
             data = extract_row(row)
@@ -249,31 +263,19 @@ def scrape_diary_df(base_url):
     if not df.empty:
         df = df.drop_duplicates(subset=["title"], keep="last")
 
-    print(f"   ✓ Total diary entries: {len(df)}")
     return df
 
 
 
 def extract_profile(url):
-    print(f"\n{'='*60}")
-    print(f"🔍 EXTRACTING PROFILE: {url}")
-    print(f"{'='*60}")
-    
     base = get_base_url(url)
-    print(f"Base URL: {base}")
+    
     
     parts = [p for p in base.split("/") if p]
     username = parts[-1] if parts else "User"
-    print(f"Username: {username}")
 
     fav_df = scrape_favorites_df(base)
     diary_df = scrape_diary_df(base)
-
-    print(f"\n{'='*60}")
-    print(f"✅ RESULTS:")
-    print(f"   Favorites: {len(fav_df)}")
-    print(f"   Diary: {len(diary_df)}")
-    print(f"{'='*60}\n")
 
     return username, fav_df, diary_df
 
