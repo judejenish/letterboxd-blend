@@ -6,53 +6,28 @@ import time
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+from playwright.sync_api import sync_playwright
+import time
 
-
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://letterboxd.com/"
-}
-
-
-session = requests.Session()
-session.headers.update(HEADERS)
-
-
-
-def get_html_selenium(url):
-    chrome_options = Options()
-    
-   
-    chrome_options.add_argument("--headless=new") 
-    chrome_options.add_argument("--no-sandbox") 
-    chrome_options.add_argument("--disable-dev-shm-usage") 
-    chrome_options.add_argument("--disable-gpu")
-    
-    
-    chrome_options.add_argument(f"user-agent={HEADERS['User-Agent']}")
-
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    driver.get(url)
-    time.sleep(3) 
-    html = driver.page_source
-    driver.quit()
+def get_html_playwright(url):
+    """Use Playwright instead of Selenium"""
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle")
+        time.sleep(2)
+        html = page.content()
+        browser.close()
     return html
-
 
 def get_html(url):
     res = session.get(url)
-
-   
+    
+    # Try requests first (faster)
     if "diary-entry-row" not in res.text:
-        return get_html_selenium(url)
-
+        return get_html_playwright(url)  # Fallback to Playwright
+    
     return res.text
-
-
 
 def resolve_url(url):
     try:
