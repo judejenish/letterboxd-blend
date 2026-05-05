@@ -4,30 +4,80 @@ import pandas as pd
 import time
 
 
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from playwright.sync_api import sync_playwright
-import time
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://letterboxd.com/"
+}
 
-def get_html_playwright(url):
-    """Use Playwright instead of Selenium"""
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(url, wait_until="networkidle")
-        time.sleep(2)
-        html = page.content()
-        browser.close()
-    return html
+
+session = requests.Session()
+session.headers.update(HEADERS)
+
+
+def get_html_selenium(url):
+    """Try to use Selenium, fallback to requests if it fails"""
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from webdriver_manager.chrome import ChromeDriverManager
+        
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new") 
+        chrome_options.add_argument("--no-sandbox") 
+        chrome_options.add_argument("--disable-dev-shm-usage") 
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument(f"user-agent={HEADERS['User-Agent']}")
+
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        driver.get(url)
+        time.sleep(3) 
+        html = driver.page_source
+        driver.quit()
+        return html
+    except Exception as e:
+        print(f"⚠️ Selenium failed: {e}")
+        print(f"   Falling back to requests with better headers...")
+        # Fallback to requests with better headers
+        return get_html_requests_fallback(url)
+
+
+def get_html_requests_fallback(url):
+    """Fallback when Selenium fails (e.g., on Render)"""
+    try:
+        improved_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://letterboxd.com/",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "DNT": "1",
+        }
+        res = requests.get(url, headers=improved_headers, timeout=15)
+        res.raise_for_status()
+        return res.text
+    except Exception as e:
+        print(f"❌ Fallback also failed: {e}")
+        return ""
+
 
 def get_html(url):
     res = session.get(url)
-    
-    # Try requests first (faster)
+
+   
     if "diary-entry-row" not in res.text:
-        return get_html_playwright(url)  # Fallback to Playwright
-    
+        return get_html_selenium(url)
+
     return res.text
+
+
 
 def resolve_url(url):
     try:
