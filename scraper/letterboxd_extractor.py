@@ -111,20 +111,35 @@ def get_html(url):
     """Get HTML - try Selenium first, then Playwright, then requests"""
     res = session.get(url)
 
-    # ✅ FIX: Check for BOTH diary-entry-row AND favourites
-    # Profile page has 'favourites', diary page has 'diary-entry-row'
-    if "diary-entry-row" in res.text or "favourites" in res.text:
-        return res.text
+    # ✅ FIX: Use URL-specific checks
+    # - Diary pages need "diary-entry-row"
+    # - Profile pages need <section id="favourites">
+    is_diary_page = "/diary/" in url
+    
+    if is_diary_page:
+        # Diary URL: must have actual diary entries
+        if "diary-entry-row" in res.text:
+            return res.text
+    else:
+        # Profile URL: must have favourites SECTION (not just word)
+        if 'id="favourites"' in res.text:
+            return res.text
     
     
     html = get_html_selenium(url)
-    if html and ("diary-entry-row" in html or "favourites" in html):
-        return html
+    if html:
+        if is_diary_page and "diary-entry-row" in html:
+            return html
+        if not is_diary_page and 'id="favourites"' in html:
+            return html
     
     
     html = get_html_playwright_fallback(url)
-    if html and ("diary-entry-row" in html or "favourites" in html):
-        return html
+    if html:
+        if is_diary_page and "diary-entry-row" in html:
+            return html
+        if not is_diary_page and 'id="favourites"' in html:
+            return html
     
     
     html = get_html_requests_fallback(url)
@@ -262,6 +277,9 @@ def scrape_diary_df(base_url):
 
     if not df.empty:
         df = df.drop_duplicates(subset=["title"], keep="last")
+    else:
+        # ✅ FIX: Empty df must have correct columns
+        df = pd.DataFrame(columns=["title", "date", "rating", "liked"])
 
     return df
 
