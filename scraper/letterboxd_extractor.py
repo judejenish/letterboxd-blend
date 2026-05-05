@@ -102,27 +102,36 @@ def get_html_requests_fallback(url):
 
 
 def get_html(url):
-    """Get HTML - try Selenium first, then Playwright, then requests"""
+    """Get HTML - try requests first, then Selenium, then Playwright"""
+
     res = session.get(url)
 
-    if "diary-entry-row" in res.text:
+   
+    if (
+        "diary-entry-row" in res.text or
+        "favourite-production-poster-container" in res.text
+    ):
         return res.text
-    
+
     
     html = get_html_selenium(url)
-    if html and ("diary-entry-row" in html or "favourites" in html):
+    if html and (
+        "diary-entry-row" in html or
+        "favourite-production-poster-container" in html
+    ):
         return html
-    
+
     
     html = get_html_playwright_fallback(url)
-    if html and ("diary-entry-row" in html or "favourites" in html):
+    if html and (
+        "diary-entry-row" in html or
+        "favourite-production-poster-container" in html
+    ):
         return html
-    
+
     
     html = get_html_requests_fallback(url)
     return html if html else res.text
-
-
 
 def resolve_url(url):
     try:
