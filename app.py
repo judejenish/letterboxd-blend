@@ -2,6 +2,8 @@ import streamlit as st
 import time
 import threading
 import html as html_lib
+import base64
+from pathlib import Path
 
 from scraper.letterboxd_extractor import (
     extract_default_profile,
@@ -125,17 +127,23 @@ st.markdown("""
     padding: 56px 40px;
     text-align: center;
 }
+@keyframes burst {
+    0%   { transform: scale(0) rotate(-8deg); opacity: 0; }
+    60%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+    80%  { transform: scale(0.96) rotate(-1deg); }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
 </style>
 """, unsafe_allow_html=True)
 
 
 
 LOADING_MESSAGES = [
-    ("🍿", "Matching your taste..."),
-    ("📽️", "Comparing films ..."),
-    ("🎬", "Blending the movie worlds..."),
-    ("⭐", "Counting those stars..."),
-    ("🎭", "Analyzing your taste profile...")
+    ("🍿", "Comparing movie tastes..."),
+    ("✋", "Ruko zara sabar karo..."),
+    ("🎬", "porumaye perumai!"),
+    ("🥊", "Sanda seirom"),
+    ("🔪", "Irunga Bhai")
 ]
 
 
@@ -184,7 +192,7 @@ with c_url:
         label_visibility="collapsed"
     )
 with c_btn:
-    blend_clicked = st.button("🎵 Blend", use_container_width=True)
+    blend_clicked = st.button("Blend", use_container_width=True)
 
 
 
@@ -267,11 +275,11 @@ def compute_blend(s_df, u_df):
 
 
 def score_tagline(s):
-    if s >= 80: return "Cinematic Soulmates 💫"
-    if s >= 60: return "Film Kindred Spirits 🎬"
-    if s >= 40: return "Decent Overlap 🎥"
-    if s >= 20: return "Diverging Tastes 🎭"
-    return "Two Different Worlds 🌍"
+    if s >= 80: return "neeum naanum vera ila da! 🔥"
+    if s >= 60: return "Ahn vaazhthukal Vaazhthuka! 🥳"
+    if s >= 40: return "kadalaye ilayam! "
+    if s >= 20: return "enna sir idu? 🧐"
+    return "Neenga vera naan vera 🥴"
 
 
 def fav_items_html(df, accent):
@@ -293,13 +301,13 @@ if st.session_state.user_loaded:
     usr_diary = st.session_state.user_diary
     score, common, same_day_watches = compute_blend(src_diary, usr_diary)
 
-    SLIDES = ["Match Score", "Common Movies", "Same Day Watches", "Who Watched More", "Favorites"]
+    SLIDES = ["Blend Score", "Common Movies", "Same Day Watches", "Who Watched More", "Favorites", "ehahaha"]
     cur = st.session_state.slide
 
     # ------ Slide Content ------
     slide_ph = st.empty()
 
-    # SLIDE 0 — Match Score (animated on first view)
+    # SLIDE 0 — Blend Score (animated on first view)
     if cur == 0:
         if not st.session_state.score_animated:
             for i in range(score + 1):
@@ -336,7 +344,7 @@ if st.session_state.user_loaded:
         )
         empty_txt = (
             '<div style="color:#555; text-align:center; padding:30px; font-size:16px">'
-            'No common movies yet 😢</div>'
+            'Adula onum ila</div>'
             if not common else ""
         )
         slide_ph.markdown(f"""
@@ -386,18 +394,18 @@ if st.session_state.user_loaded:
         uname = st.session_state.user_name
 
         if s_count > u_count:
-            headline = f"🏆 {sname} IS A FILM MACHINE"
-            sub = f"Watched {s_count - u_count} more films than {uname}. Absolute cinema devotee. 🍿"
+            headline = f"😞 {uname} pathathu "
+            sub = f" {sname} Watched {s_count - u_count} more films than {uname}. "
             accent = "#1DB954"
             s_col, u_col = "#1DB954", "#e74c3c"
         elif u_count > s_count:
-            headline = f"🔥 {uname} IS A Movie Buff"
+            headline = f"🔥 {uname} ku vera vela ila athan "
             sub = f"{sname} has {u_count - s_count} films to catch up on. "
             accent = "#e74c3c"
             s_col, u_col = "#e74c3c", "#1DB954"
         else:
-            headline = "⚖️ EQUALLY OBSESSED"
-            sub = f"Both {sname} & {uname} clocked {s_count} films. A perfect cinematic Match! 🎭"
+            headline = "⚖️"
+            sub = f"Both {sname} & {uname} clocked {s_count} films.rendum onuku onu salichahu ila"
             accent = "#f39c12"
             s_col = u_col = "#f39c12"
 
@@ -446,6 +454,19 @@ if st.session_state.user_loaded:
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+    # SLIDE 5 — ehahaha
+    elif cur == 5:
+        img_bytes = Path("images/image1.jpg").read_bytes()
+        img_b64 = base64.b64encode(img_bytes).decode()
+        slide_ph.markdown(
+            f'<div style="text-align:center;padding:20px;">'
+            f'<img src="data:image/jpeg;base64,{img_b64}" '
+            f'style="max-width:100%;border-radius:16px;'
+            f'animation:burst 1s ease-out forwards;" />'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
     # ------ Navigation Bar ------
     st.write("")
